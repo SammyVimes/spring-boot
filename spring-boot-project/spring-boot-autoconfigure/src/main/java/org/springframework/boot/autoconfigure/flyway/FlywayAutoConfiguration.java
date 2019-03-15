@@ -16,23 +16,10 @@
 
 package org.springframework.boot.autoconfigure.flyway;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
-import javax.persistence.EntityManagerFactory;
-import javax.sql.DataSource;
-
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.callback.Callback;
-import org.flywaydb.core.api.callback.FlywayCallback;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
-
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -43,11 +30,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.jpa.EntityManagerFactoryDependsOnPostProcessor;
 import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration.FlywayDataSourceCondition;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
-import org.springframework.boot.autoconfigure.jdbc.JdbcOperationsDependsOnPostProcessor;
-import org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration;
-import org.springframework.boot.autoconfigure.jdbc.NamedParameterJdbcOperationsDependsOnPostProcessor;
+import org.springframework.boot.autoconfigure.jdbc.*;
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.boot.context.properties.ConfigurationPropertiesBinding;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -69,6 +52,12 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
+import javax.persistence.EntityManagerFactory;
+import javax.sql.DataSource;
+import java.util.*;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
 /**
  * {@link EnableAutoConfiguration Auto-configuration} for Flyway database migrations.
  *
@@ -81,6 +70,7 @@ import org.springframework.util.StringUtils;
  * @author Dominic Gunn
  * @author Dan Zheng
  * @author András Deák
+ * @author Semyon Danilov
  * @since 1.1.0
  */
 @SuppressWarnings("deprecation")
@@ -113,7 +103,7 @@ public class FlywayAutoConfiguration {
 				ResourceLoader resourceLoader, ObjectProvider<DataSource> dataSource,
 				@FlywayDataSource ObjectProvider<DataSource> flywayDataSource,
 				ObjectProvider<FlywayConfigurationCustomizer> fluentConfigurationCustomizers,
-				ObjectProvider<Callback> callbacks, ObjectProvider<FlywayCallback> flywayCallbacks) {
+				ObjectProvider<Callback> callbacks) {
 			FluentConfiguration configuration = new FluentConfiguration(resourceLoader.getClassLoader());
 			DataSource dataSourceToMigrate = configureDataSource(configuration, properties, dataSourceProperties,
 					flywayDataSource.getIfAvailable(), dataSource.getIfAvailable());
@@ -122,10 +112,8 @@ public class FlywayAutoConfiguration {
 			List<Callback> orderedCallbacks = callbacks.orderedStream().collect(Collectors.toList());
 			configureCallbacks(configuration, orderedCallbacks);
 			fluentConfigurationCustomizers.orderedStream().forEach((customizer) -> customizer.customize(configuration));
-			Flyway flyway = configuration.load();
-			List<FlywayCallback> orderedFlywayCallbacks = flywayCallbacks.orderedStream().collect(Collectors.toList());
-			configureFlywayCallbacks(flyway, orderedCallbacks, orderedFlywayCallbacks);
-			return flyway;
+			configureFlywayCallbacks(configuration, orderedCallbacks);
+			return configuration.load();
 		}
 
 		private DataSource configureDataSource(FluentConfiguration configuration, FlywayProperties properties,
@@ -210,14 +198,9 @@ public class FlywayAutoConfiguration {
 			}
 		}
 
-		private void configureFlywayCallbacks(Flyway flyway, List<Callback> callbacks,
-				List<FlywayCallback> flywayCallbacks) {
-			if (!flywayCallbacks.isEmpty()) {
-				if (!callbacks.isEmpty()) {
-					throw new IllegalStateException("Found a mixture of Callback and FlywayCallback beans."
-							+ " One type must be used exclusively.");
-				}
-				flyway.setCallbacks(flywayCallbacks.toArray(new FlywayCallback[0]));
+		private void configureFlywayCallbacks(FluentConfiguration flyway, List<Callback> callbacks) {
+			if (!callbacks.isEmpty()) {
+				flyway.callbacks(callbacks.toArray(new Callback[0]));
 			}
 		}
 
